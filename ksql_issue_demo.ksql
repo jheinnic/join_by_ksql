@@ -1,0 +1,65 @@
+SET 'ksql.sink.window.change.log.additional.retention'='10000000000';
+CREATE STREAM day1 WITH (KAFKA_TOPIC = 'jch3.day.scenario', TIMESTAMP='asOf', VALUE_FORMAT='avro', partitions=1, replicas=1);
+CREATE STREAM first1 WITH (KAFKA_TOPIC = 'jch3.first.scenario', TIMESTAMP='firstAt', KEY='id', VALUE_FORMAT='avro', partitions=1, replicas=1);
+
+CREATE STREAM first2
+WITH ( timestamp='firstAt', value_format='avro', partitions=1, replicas=1 )
+AS SELECT CAST(first1.id AS STRING) AS id, first1.duration, first1.firstAt
+FROM first1 first1
+PARTITION BY id;
+
+CREATE STREAM day2
+WITH ( timestamp='asOf', value_format='avro', partitions=1, replicas=1 )
+AS SELECT CAST(day1.acctId AS STRING) AS acctId, day1.id, day1.bankedSum, day1.currentCounter, day1.asOf
+FROM day1 day1
+PARTITION BY acctId;
+
+CREATE STREAM day_one_joins
+WITH ( timestamp='asOf', value_format='avro', kafka_topic='day_one_joins', partitions=1, replicas=1 )
+AS SELECT day2.id AS id, day2.acctId AS acctId, first2.duration AS duration, day2.bankedSum AS bankedSum, day2.currentCounter AS currentCounter, first2.firstAt as firstAt, day2.asOf AS asOf
+FROM day2 day2 INNER JOIN first2 first2
+WITHIN (1 DAY, 1 HOUR) ON day2.acctId = first2.id;
+-- WHERE first2.firstAt IS NOT NULL AND day2.asOf IS NOT NULL AND first2.firstAt < day2.asOf;
+
+CREATE STREAM all_day_joins
+WITH ( timestamp='asOf', value_format='avro', kafka_topic='all_day_joins', partitions=1, replicas=1 )
+AS SELECT id, acctId, duration, bankedSum, currentCounter, asOf
+FROM day_one_joins;
+
+CREATE STREAM next_day_joins
+WITH ( timestamp='asOf', value_format='avro', kafka_topic='next_day_joins', partitions=1, replicas=1 )
+AS SELECT next_day.id AS id, next_day.acctId AS acctId, prev_day.duration AS duration, next_day.bankedSum AS bankedSum, next_day.currentCounter AS currentCounter, next_day.asOf AS asOf
+FROM day2 next_day FULL OUTER JOIN all_day_joins prev_day 
+WITHIN (1 DAY, 1 HOUR) ON next_day.acctId = prev_day.acctId
+WHERE prev_day.asOf IS NOT NULL AND next_day.asOf IS NOT NULL AND prev_day.asOf < next_day.asOf
+PARTITION BY acctId;
+
+INSERT INTO all_day_joins
+SELECT id, acctId, duration, bankedSum, currentCounter, asOf
+FROM next_day_joins;
+
+-- CREATE STREAM recurse_day_joins
+-- WITH ( timestamp='asOf', value_format='avro', kafka_topic='recurse_day_joins', partitions=1, replicas=1 )
+-- AS SELECT next_day.id AS id, prev_day.acctId AS acctId, prev_day.duration AS duration, next_day.bankedSum AS bankedSum, next_day.currentCounter AS currentCounter, next_day.asOf AS asOf
+-- FROM day2 next_day INNER JOIN recurse_day_joins prev_day
+-- WITHIN (1 DAY, 1 HOUR) ON next_day.acctId = prev_day.acctId
+-- WHERE prev_day.asOf < next_day.asOf;
+-- 
+-- INSERT INTO recurse_day_joins
+-- SELECT id, acctId, duration, bankedSum, currentCounter, asOf
+-- FROM day_one_joins;
+
+
+-- CREATE STREAM all_day_joins_2
+-- WITH ( timestamp='asOf', value_format='avro', kafka_topic='all_day_joins_2', partitions=1, replicas=1 )
+-- AS SELECT day2.id AS id, day2.acctId AS acctId, first2.duration AS duration, day2.bankedSum AS bankedSum, day2.currentCounter AS currentCounter, day2.asOf AS asOf
+-- FROM day2 day2 INNER JOIN first2 first2 INNER JOIN day2 day2
+-- WITHIN (1 DAY, 1 HOUR) ON first2.id = day2.acctId
+-- WHERE first2,firstAt < day2.asOf
+-- PARTITION BY acctId;
+-- 
+-- INSERT INTO all_day_joins_2
+-- SELECT day2.id AS id, prev_day.acctId AS acctId, prev_day.duration AS duration, day2.bankedSum AS bankedSum, day2.currentCounter AS currentCounter, day2.asOf AS asOf
+-- FROM day2 day2 INNER JOIN all_day_joins_2 prev_day
+-- WITHIN (1 DAY, 1 HOUR) ON day2.acctId = prev_day.acctId
+-- WHERE day2.asOf > prev_day.asOf;

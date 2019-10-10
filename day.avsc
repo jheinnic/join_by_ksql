@@ -1,0 +1,1 @@
+{"type":"record","namespace":"investor","name":"payments","fields":[{"name":"id","type":"string"},{"name":"acctId","type":"string"},{"name":"bankedSum","type":"long"},{"name":"currentCounter","type":"long"},{"name":"acctClosed","type":"boolean"},{"name":"asOf","type":{"type":"long","logicalType":"timestamp-millis"}}]}

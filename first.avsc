@@ -1,0 +1,1 @@
+{"type":"record","namespace":"investor","name":"payments","fields":[{"name":"id","type":"string"},{"name":"duration","type":"int"},{"name":"firstAt","type":{"type":"long","logicalType":"timestamp-millis"}}]}
